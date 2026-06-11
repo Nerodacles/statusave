@@ -1,5 +1,6 @@
 package com.statusave.app
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -480,6 +481,7 @@ private fun SettingsDialog(
     onFolderName: (String) -> Unit,
 ) {
     var folderName by remember(state.folderName) { mutableStateOf(state.folderName) }
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -506,6 +508,22 @@ private fun SettingsDialog(
                 TextButton(onClick = { onDismiss(); onChangeStatuses() }) {
                     Text("Change WhatsApp statuses folder")
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "StatuSave v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://github.com/Nerodacles/statusave/releases/latest"),
+                                )
+                            )
+                        }
+                        .padding(vertical = 4.dp),
+                )
             }
         },
         confirmButton = {
