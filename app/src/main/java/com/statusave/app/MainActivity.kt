@@ -14,6 +14,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,7 +56,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -77,15 +79,20 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -107,6 +114,7 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -148,7 +156,9 @@ fun App(vm: MainViewModel = viewModel()) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val tabPager = rememberPagerState { 2 }
+    val tab = tabPager.currentPage
+    val scope = rememberCoroutineScope()
     var filter by rememberSaveable { mutableIntStateOf(0) } // 0 = all, 1 = photos, 2 = videos
     var selected by remember { mutableStateOf(setOf<String>()) }
     var showSettings by remember { mutableStateOf(false) }
@@ -164,14 +174,15 @@ fun App(vm: MainViewModel = viewModel()) {
             .build()
     }
 
-    val currentItems = remember(state.statuses, state.saved, tab, filter) {
-        val base = if (tab == 0) state.statuses else state.saved
-        when (filter) {
+    fun itemsFor(page: Int): List<StatusItem> {
+        val base = if (page == 0) state.statuses else state.saved
+        return when (filter) {
             1 -> base.filter { !it.isVideo }
             2 -> base.filter { it.isVideo }
             else -> base
         }
     }
+    val currentItems = itemsFor(tab)
     val selectionMode = selected.isNotEmpty()
     val selectedItems = currentItems.filter { it.uri.toString() in selected }
 
@@ -272,10 +283,14 @@ fun App(vm: MainViewModel = viewModel()) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Statuses") })
+                Tab(
+                    selected = tab == 0,
+                    onClick = { scope.launch { tabPager.animateScrollToPage(0) } },
+                    text = { Text("Statuses") },
+                )
                 Tab(
                     selected = tab == 1,
-                    onClick = { tab = 1 },
+                    onClick = { scope.launch { tabPager.animateScrollToPage(1) } },
                     text = { Text("Saved (${state.saved.size})") },
                 )
             }
@@ -287,34 +302,41 @@ fun App(vm: MainViewModel = viewModel()) {
                 FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("Photos") })
                 FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("Videos") })
             }
-            when (tab) {
-                0 -> StatusesTab(
-                    state = state,
-                    items = currentItems,
-                    imageLoader = imageLoader,
-                    selectedKeys = selected,
-                    selectionMode = selectionMode,
-                    onGrantWhatsApp = {
-                        statusesPicker.launch(StatusRepository.buildInitialUri(business = false))
-                    },
-                    onGrantBusiness = {
-                        statusesPicker.launch(StatusRepository.buildInitialUri(business = true))
-                    },
-                    onPreview = { index -> preview = PreviewRequest(currentItems, index) },
-                    onToggleSelect = toggleSelect,
-                    onSave = { trySaveMany(listOf(it)) },
-                )
-
-                1 -> SavedTab(
-                    state = state,
-                    items = currentItems,
-                    imageLoader = imageLoader,
-                    selectedKeys = selected,
-                    selectionMode = selectionMode,
-                    onPreview = { index -> preview = PreviewRequest(currentItems, index) },
-                    onToggleSelect = toggleSelect,
-                    onDelete = { toDelete = listOf(it) },
-                )
+            HorizontalPager(
+                state = tabPager,
+                userScrollEnabled = !selectionMode,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                val pageItems = itemsFor(page)
+                if (page == 0) {
+                    StatusesTab(
+                        state = state,
+                        items = pageItems,
+                        imageLoader = imageLoader,
+                        selectedKeys = selected,
+                        selectionMode = selectionMode,
+                        onGrantWhatsApp = {
+                            statusesPicker.launch(StatusRepository.buildInitialUri(business = false))
+                        },
+                        onGrantBusiness = {
+                            statusesPicker.launch(StatusRepository.buildInitialUri(business = true))
+                        },
+                        onPreview = { index -> preview = PreviewRequest(pageItems, index) },
+                        onToggleSelect = toggleSelect,
+                        onSave = { trySaveMany(listOf(it)) },
+                    )
+                } else {
+                    SavedTab(
+                        state = state,
+                        items = pageItems,
+                        imageLoader = imageLoader,
+                        selectedKeys = selected,
+                        selectionMode = selectionMode,
+                        onPreview = { index -> preview = PreviewRequest(pageItems, index) },
+                        onToggleSelect = toggleSelect,
+                        onDelete = { toDelete = listOf(it) },
+                    )
+                }
             }
         }
     }
@@ -787,29 +809,47 @@ private fun PreviewPager(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         val pagerState = rememberPagerState(initialPage = startIndex) { items.size }
+        var pageZoomed by remember { mutableStateOf(false) }
+        LaunchedEffect(pagerState.currentPage) { pageZoomed = false }
+
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = !pageZoomed,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
                 val item = items[page]
-                if (item.isVideo && pagerState.settledPage == page) {
-                    VideoPlayer(uri = item.uri, modifier = Modifier.fillMaxSize())
-                } else {
-                    Box(Modifier.fillMaxSize()) {
-                        AsyncImage(
-                            model = item.uri,
-                            imageLoader = imageLoader,
-                            contentDescription = item.name,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                        if (item.isVideo) {
-                            Icon(
-                                Icons.Default.PlayCircle,
-                                contentDescription = "Video",
-                                tint = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.align(Alignment.Center).size(56.dp),
-                            )
+                val isActive = pagerState.settledPage == page
+                if (item.isVideo) {
+                    SwipeDownToDismiss(onDismiss = onDismiss) {
+                        if (isActive) {
+                            VideoPlayer(uri = item.uri, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Box(Modifier.fillMaxSize()) {
+                                AsyncImage(
+                                    model = item.uri,
+                                    imageLoader = imageLoader,
+                                    contentDescription = item.name,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                Icon(
+                                    Icons.Default.PlayCircle,
+                                    contentDescription = "Video",
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.align(Alignment.Center).size(56.dp),
+                                )
+                            }
                         }
                     }
+                } else {
+                    ZoomableImage(
+                        item = item,
+                        imageLoader = imageLoader,
+                        isActive = isActive,
+                        onDismiss = onDismiss,
+                        onZoomChanged = { zoomed -> if (isActive) pageZoomed = zoomed },
+                    )
                 }
             }
             IconButton(
@@ -827,14 +867,112 @@ private fun PreviewPager(
                     .padding(top = 12.dp),
             )
             if (onSave != null) {
-                FloatingActionButton(
+                FilledIconButton(
                     onClick = { onSave(items[pagerState.currentPage]) },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(end = 8.dp),
                 ) {
                     Icon(Icons.Default.Download, contentDescription = "Save")
                 }
             }
         }
+    }
+}
+
+private const val DISMISS_DRAG_THRESHOLD = 300f
+
+/** Wrapper que cierra el visor al deslizar hacia abajo (usado para videos). */
+@Composable
+private fun SwipeDownToDismiss(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    var dragY by remember { mutableFloatStateOf(0f) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, delta -> dragY += delta },
+                    onDragEnd = {
+                        if (dragY > DISMISS_DRAG_THRESHOLD) onDismiss() else dragY = 0f
+                    },
+                    onDragCancel = { dragY = 0f },
+                )
+            }
+            .graphicsLayer { translationY = dragY.coerceAtLeast(0f) },
+    ) {
+        content()
+    }
+}
+
+/** Foto con zoom (pellizco y doble tap) y deslizar hacia abajo para cerrar. */
+@Composable
+private fun ZoomableImage(
+    item: StatusItem,
+    imageLoader: ImageLoader,
+    isActive: Boolean,
+    onDismiss: () -> Unit,
+    onZoomChanged: (Boolean) -> Unit,
+) {
+    var scale by remember(item.uri) { mutableFloatStateOf(1f) }
+    var offset by remember(item.uri) { mutableStateOf(Offset.Zero) }
+    var dragY by remember(item.uri) { mutableFloatStateOf(0f) }
+
+    // Al salir de la página se restablece el zoom.
+    LaunchedEffect(isActive) {
+        if (!isActive) {
+            scale = 1f
+            offset = Offset.Zero
+            dragY = 0f
+            onZoomChanged(false)
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    val newScale = (scale * zoom).coerceIn(1f, 5f)
+                    scale = newScale
+                    offset = if (newScale > 1f) offset + pan else Offset.Zero
+                    onZoomChanged(newScale > 1f)
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        scale = if (scale > 1f) 1f else 2.5f
+                        offset = Offset.Zero
+                        onZoomChanged(scale > 1f)
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, delta -> if (scale <= 1f) dragY += delta },
+                    onDragEnd = {
+                        if (scale <= 1f && dragY > DISMISS_DRAG_THRESHOLD) onDismiss() else dragY = 0f
+                    },
+                    onDragCancel = { dragY = 0f },
+                )
+            },
+    ) {
+        AsyncImage(
+            model = item.uri,
+            imageLoader = imageLoader,
+            contentDescription = item.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y +
+                        if (scale <= 1f) dragY.coerceAtLeast(0f) else 0f
+                },
+        )
     }
 }
 
