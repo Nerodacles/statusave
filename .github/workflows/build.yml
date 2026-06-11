@@ -22,6 +22,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Lint and unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew lintRelease testReleaseUnitTest
+
       - name: Decode signing keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
 

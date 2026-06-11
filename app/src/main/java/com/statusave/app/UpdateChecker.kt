@@ -10,7 +10,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class UpdateInfo(val versionName: String, val apkUrl: String)
+data class UpdateInfo(val versionName: String, val apkUrl: String, val notes: String = "")
 
 /**
  * Checks the GitHub releases of Nerodacles/statusave for a newer version,
@@ -41,7 +41,7 @@ object UpdateChecker {
                     break
                 }
             }
-            apkUrl?.let { UpdateInfo(version, it) }
+            apkUrl?.let { UpdateInfo(version, it, json.optString("body").trim()) }
         }.getOrNull()
     }
 
@@ -57,15 +57,30 @@ object UpdateChecker {
         return false
     }
 
-    suspend fun downloadApk(context: Context, url: String): File? = withContext(Dispatchers.IO) {
+    suspend fun downloadApk(
+        context: Context,
+        url: String,
+        onProgress: (Float) -> Unit = {},
+    ): File? = withContext(Dispatchers.IO) {
         runCatching {
             val file = File(context.getExternalFilesDir(null) ?: context.filesDir, "update.apk")
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.instanceFollowRedirects = true
             conn.connectTimeout = 15_000
             conn.readTimeout = 60_000
+            val total = conn.contentLengthLong
             conn.inputStream.use { input ->
-                file.outputStream().use { output -> input.copyTo(output) }
+                file.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        copied += read
+                        if (total > 0) onProgress(copied.toFloat() / total)
+                    }
+                }
             }
             conn.disconnect()
             file

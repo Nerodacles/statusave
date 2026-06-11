@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.62"
+        android:scaleY="0.62"
+        android:pivotX="54"
+        android:pivotY="54">
+        <!-- Anillo de estado (segmentos) -->
+        <path
+            android:strokeColor="#25D366"
+            android:strokeWidth="7"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M54,18 A36,36 0 0 1 85.2,36" />
+        <path
+            android:strokeColor="#25D366"
+            android:strokeWidth="7"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M85.2,72 A36,36 0 0 1 54,90" />
+        <path
+            android:strokeColor="#25D366"
+            android:strokeWidth="7"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M22.8,72 A36,36 0 0 1 22.8,36" />
+        <!-- Flecha de descarga -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M50,36 h8 v18 h10 L54,70 40,54 h10 Z" />
+    </group>
+</vector>

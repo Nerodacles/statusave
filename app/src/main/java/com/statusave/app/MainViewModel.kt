@@ -24,7 +24,8 @@ data class UiState(
     val folderName: String = "StatuSave",
     val message: String? = null,
     val update: UpdateInfo? = null,
-    val downloadingUpdate: Boolean = false,
+    /** null = no download in progress; 0f..1f = downloading. */
+    val downloadProgress: Float? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -124,7 +125,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    fun save(item: StatusItem) {
+    fun saveMany(items: List<StatusItem>) {
+        if (items.isEmpty()) return
         viewModelScope.launch {
             val ctx = context()
             val destUriStr = prefs.destTreeUri
@@ -132,29 +134,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(message = "Choose a destination folder first") }
                 return@launch
             }
-            val ok = withContext(Dispatchers.IO) {
+            val saved = withContext(Dispatchers.IO) {
                 runCatching {
                     val destDir = StatusRepository.findOrCreateDestDir(
                         ctx, Uri.parse(destUriStr), prefs.folderName,
-                    ) ?: return@runCatching false
-                    StatusRepository.saveStatus(ctx, item, destDir)
-                }.getOrDefault(false)
+                    ) ?: return@runCatching 0
+                    items.count { StatusRepository.saveStatus(ctx, it, destDir) }
+                }.getOrDefault(0)
             }
-            _state.update {
-                it.copy(message = if (ok) "Status saved" else "Could not save the status")
+            val message = when {
+                saved == 0 -> "Could not save"
+                items.size == 1 -> "Status saved"
+                else -> "$saved of ${items.size} statuses saved"
             }
+            _state.update { it.copy(message = message) }
             refresh()
         }
     }
 
-    fun delete(item: StatusItem) {
+    fun deleteMany(items: List<StatusItem>) {
+        if (items.isEmpty()) return
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                StatusRepository.deleteDocument(context(), item.uri)
+            val deleted = withContext(Dispatchers.IO) {
+                items.count { StatusRepository.deleteDocument(context(), it.uri) }
             }
-            _state.update {
-                it.copy(message = if (ok) "File deleted" else "Could not delete the file")
+            val message = when {
+                deleted == 0 -> "Could not delete"
+                items.size == 1 -> "File deleted"
+                else -> "$deleted files deleted"
             }
+            _state.update { it.copy(message = message) }
             refresh()
         }
     }
@@ -179,9 +188,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadAndInstallUpdate() {
         val update = _state.value.update ?: return
         viewModelScope.launch {
-            _state.update { it.copy(downloadingUpdate = true) }
-            val file = UpdateChecker.downloadApk(context(), update.apkUrl)
-            _state.update { it.copy(downloadingUpdate = false) }
+            _state.update { it.copy(downloadProgress = 0f) }
+            var lastPercent = -1
+            val file = UpdateChecker.downloadApk(context(), update.apkUrl) { progress ->
+                val percent = (progress * 100).toInt()
+                if (percent != lastPercent) {
+                    lastPercent = percent
+                    _state.update { it.copy(downloadProgress = progress) }
+                }
+            }
+            _state.update { it.copy(downloadProgress = null) }
             if (file != null) {
                 UpdateChecker.installApk(context(), file)
                 _state.update { it.copy(update = null) }
