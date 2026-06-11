@@ -23,6 +23,8 @@ data class UiState(
     val destDisplay: String = "",
     val folderName: String = "StatuSave",
     val message: String? = null,
+    val update: UpdateInfo? = null,
+    val downloadingUpdate: Boolean = false,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -33,6 +35,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         refresh()
+        checkForUpdates()
     }
 
     private fun context(): Application = getApplication()
@@ -158,5 +161,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeMessage() {
         _state.update { it.copy(message = null) }
+    }
+
+    private fun checkForUpdates() {
+        viewModelScope.launch {
+            val latest = UpdateChecker.fetchLatest() ?: return@launch
+            if (UpdateChecker.isNewer(latest.versionName, BuildConfig.VERSION_NAME)) {
+                _state.update { it.copy(update = latest) }
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        _state.update { it.copy(update = null) }
+    }
+
+    fun downloadAndInstallUpdate() {
+        val update = _state.value.update ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(downloadingUpdate = true) }
+            val file = UpdateChecker.downloadApk(context(), update.apkUrl)
+            _state.update { it.copy(downloadingUpdate = false) }
+            if (file != null) {
+                UpdateChecker.installApk(context(), file)
+                _state.update { it.copy(update = null) }
+            } else {
+                _state.update { it.copy(message = "Could not download the update") }
+            }
+        }
     }
 }

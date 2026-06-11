@@ -1,5 +1,7 @@
 .gradle/
 build/
+release.keystore
+keystore-info.txt
 app/build/
 local.properties
 .idea/

@@ -4,6 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// CI overrides these via -PappVersionCode / -PappVersionName (GitHub run number).
+val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 1
+val appVersionName = project.findProperty("appVersionName") as String? ?: "1.0.0"
+
 android {
     namespace = "com.statusave.app"
     compileSdk = 35
@@ -12,8 +16,21 @@ android {
         applicationId = "com.statusave.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        create("release") {
+            // Signing material comes from the environment (CI secrets or local shell).
+            val ksPath = System.getenv("KEYSTORE_FILE")
+            if (ksPath != null) {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS") ?: "statusave"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -24,6 +41,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (System.getenv("KEYSTORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -38,10 +58,12 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")

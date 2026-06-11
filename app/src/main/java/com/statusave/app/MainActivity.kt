@@ -41,6 +41,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -250,6 +251,39 @@ fun App(vm: MainViewModel = viewModel()) {
                 statusesPicker.launch(StatusRepository.buildInitialUri(business = false))
             },
             onFolderName = { vm.setFolderName(it) },
+        )
+    }
+
+    state.update?.let { update ->
+        AlertDialog(
+            onDismissRequest = { if (!state.downloadingUpdate) vm.dismissUpdate() },
+            title = { Text("Update available") },
+            text = {
+                if (state.downloadingUpdate) {
+                    Column {
+                        Text("Downloading StatuSave ${update.versionName}…")
+                        Spacer(Modifier.height(12.dp))
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Text(
+                        "StatuSave ${update.versionName} is available " +
+                            "(you have ${BuildConfig.VERSION_NAME}). Install it now?"
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.downloadingUpdate,
+                    onClick = { vm.downloadAndInstallUpdate() },
+                ) { Text("Update") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !state.downloadingUpdate,
+                    onClick = { vm.dismissUpdate() },
+                ) { Text("Later") }
+            },
         )
     }
 
